@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+# set to 1 if this script is being executed and not sourced
+__INVOKED=$([[ "${BASH_SOURCE[0]}" == "${0}" ]] && echo 1 || true)
+
+# the directory containing this script
+# syntax here is odd because it has to work for both sourcing and executing the script
+__THIS_DIR="${0:a:h}"
+if [[ -z $__THIS_DIR ]]; then
+    __THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
+# setup script sources other files in this directory
+# this will also call a `__setup` function if it exists in the file, deleting it after it is called
+# if the script is being executed, it will call `eval` with the arguments passed in
+__setup() {
+    unset -f __setup
+    local invoked=__INVOKED
+    unset __INVOKED
+    local setupFuncs=()
+    local file
+    for file in "$__THIS_DIR"/*.bash; do
+        command source "$file"
+        if [[ "$(type -t __setup || true)" == "function" ]]; then
+            setupFuncs+=( "$(declare -f __setup)" )
+            unset -f __setup
+        fi
+    done
+    __checkRequirement "a recent version of bash" "local -A __x" "brew install bash"
+    lazyRequire "aws" "aws --version" "brew install awscli"
+    lazyRequire "jq" "jq --version" "brew install jq"
+    lazyRequire "yq" "yq --version" "brew install yq"
+    lazyRequire "json5" "json5 --version" "npm i -g json5"
+    for func in "${setupFuncs[@]}"; do
+        eval "$func"
+        __setup
+        unset -f __setup
+    done
+    if [[ -n $invoked ]]; then
+        eval "$*"
+    fi
+}
+
+__setup "$@"
